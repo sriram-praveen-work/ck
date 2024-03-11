@@ -18,6 +18,9 @@
 #ifdef CM_MLPERF_BACKEND_ONNXRUNTIME
     #include "onnxruntime_backend.h"
 #endif
+#ifdef CM_MLPERF_BACKEND_TVM_ONNX
+    #include "tvm_backend.h"
+#endif
 
 class InputSettings {
 
