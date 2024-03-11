@@ -5,6 +5,7 @@ import shutil
 def preprocess(i):
 
     os_info = i['os_info']
+    env = i['env']
 
     if os_info['platform'] == 'windows':
         return {'return':1, 'error': 'Windows is not supported in this script yet'}
@@ -21,7 +22,7 @@ def preprocess(i):
           " --gpu_batch_size="+env['CM_MODEL_BATCH_SIZE'] +\
           " --gpu_copy_streams="+env['CM_GPU_COPY_STREAMS'] +\
           " --workspace_size="+env['CM_TENSORRT_WORKSPACE_SIZE']
-~                    
+                    
     return {'return':0}
 
 def postprocess(i):

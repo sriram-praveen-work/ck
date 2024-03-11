@@ -51,6 +51,8 @@ if [ ! -d "${CUR_DIR}/tvm/build" ]; then
     if [[ ${CM_TVM_USE_CUDA} == "yes" ]]; then
         sed -i.bak 's/set(USE_CUDA OFF)/set(USE_OPENMP ON)/' config.cmake
         echo 'set(USE_CUDA ON)' >> config.cmake
+        sed -i.bak "s|set(USE_CUDNN OFF)|set(USE_CUDNN ON)|" config.cmake
+
     fi
 
     cmake ..

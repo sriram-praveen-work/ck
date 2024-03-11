@@ -9,6 +9,7 @@ if os.environ.get("CM_TVM_FRONTEND_FRAMEWORK", None) == "pytorch":
 import tvm
 from tvm import relay, meta_schedule
 from tvm.driver.tvmc.frontends import load_model
+import tvm.tir.tensor_intrin
 
 def get_shape_dict_from_onnx(
     shape: List[int],
@@ -92,31 +93,61 @@ def tune_model(
     if not os.path.exists(work_dir):
         os.mkdir(work_dir)
     print("Extracting tasks...")
-    extracted_tasks = meta_schedule.relay_integration.extract_tasks(
-        mod, target, params
-    )
-    tasks, task_weights = meta_schedule.relay_integration.extracted_tasks_to_tune_contexts(
-        extracted_tasks, work_dir, strategy="evolutionary"
-    )
+    # extracted_tasks = meta_schedule.relay_integration.extract_tasks(
+    #     mod, target, params
+    # )
+    # tasks, task_weights = meta_schedule.relay_integration.extracted_tasks_to_tune_contexts(
+    #     extracted_tasks, work_dir, strategy="evolutionary"
+    # )
 
-    print("Begin tuning...")
-    evaluator_config = meta_schedule.runner.config.EvaluatorConfig(
-        number=1,
-        repeat=10,
-        enable_cpu_cache_flush=True
-    )
-    database = meta_schedule.tune.tune_tasks(
-        tasks=tasks,
-        task_weights=task_weights,
-        work_dir=work_dir,
-        max_trials_global=10000,
-        num_trials_per_iter=64,
-        max_trials_per_task=512,
-        builder=meta_schedule.builder.LocalBuilder(),
-        runner=meta_schedule.runner.LocalRunner(
-            evaluator_config=evaluator_config
-        ),
-    )
+    # print("Begin tuning...")
+    # evaluator_config = meta_schedule.runner.config.EvaluatorConfig(
+    #     number=1,
+    #     repeat=10,
+    #     enable_cpu_cache_flush=True
+    # )
+    # database = meta_schedule.tune.tune_tasks(
+    #     tasks=tasks,
+    #     task_weights=task_weights,
+    #     work_dir=work_dir,
+    #     max_trials_global=10000,
+    #     num_trials_per_iter=64,
+    #     max_trials_per_task=512,
+    #     builder=meta_schedule.builder.LocalBuilder(),
+    #     runner=meta_schedule.runner.LocalRunner(
+    #         evaluator_config=evaluator_config
+    #     ),
+    # )
+
+    use_tensorcores = True
+    # Metascheduler (CUDA Tensorcores)
+    if use_tensorcores == True:
+        print("Using cuda-tensorcores space")
+        database = meta_schedule.relay_integration.tune_relay(
+            mod=mod,
+            target=target,
+            work_dir=work_dir,
+            max_trials_global=10000,
+            num_trials_per_iter=64,
+            max_trials_per_task=512,
+            params=params,
+            space=meta_schedule.space_generator.PostOrderApply(
+                sch_rules="cuda-tensorcore", 
+                postprocs="cuda-tensorcore", 
+                mutator_probs="cuda-tensorcore"
+            )
+        )
+    else:
+        print("Using regular space")
+        database = meta_schedule.relay_integration.tune_relay(
+            mod=mod,
+            target=target,
+            work_dir=work_dir,
+            max_trials_global=10000,
+            num_trials_per_iter=64,
+            max_trials_per_task=512,
+            params=params,
+        )
     
     return work_dir, database
 

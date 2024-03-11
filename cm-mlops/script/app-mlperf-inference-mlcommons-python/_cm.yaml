@@ -728,7 +728,7 @@ variations:
       CM_MLPERF_BACKEND_VERSION: <<<CM_ONNXRUNTIME_VERSION>>>
     deps:
     - tags: get,generic-python-lib,_onnx
-    - tags: get,tvm
+    - tags: get,tvm,_cuda
       names:
       - tvm
     - tags: get,tvm-model,_onnx
@@ -746,7 +746,7 @@ variations:
       CM_MLPERF_BACKEND_VERSION: <<<CM_TVM-TFLITE_VERSION>>>
     deps:
     - tags: get,generic-python-lib,_tflite
-    - tags: get,tvm
+    - tags: get,tvm,_cuda
       names:
       - tvm
     - tags: get,tvm-model,_tflite
@@ -765,7 +765,7 @@ variations:
       MLPERF_TVM_TORCH_QUANTIZED_ENGINE: qnnpack
     deps:
     - tags: get,generic-python-lib,_torch
-    - tags: get,tvm
+    - tags: get,tvm,_cuda
       names:
       - tvm
     - tags: get,tvm-model,_pytorch
