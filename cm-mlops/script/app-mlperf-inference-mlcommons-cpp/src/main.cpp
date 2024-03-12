@@ -169,6 +169,12 @@ int main(int argc, const char *argv[]) {
             model, device, performance_sample_count, input_settings.batch_size,
             input_settings.device_name == "gpu"));
 #endif
+    } else if (input_settings.backend_name == "tvm-onnx") {
+#ifdef CM_MLPERF_BACKEND_TVM_ONNX
+        backend.reset(new TVMBackend(
+            model, device, performance_sample_count, input_settings.batch_size,
+            input_settings.device_name == "gpu"));
+#endif
     } else {
         std::cerr << "backend (" << input_settings.backend_name << ") not supported" << std::endl;
         return 1;

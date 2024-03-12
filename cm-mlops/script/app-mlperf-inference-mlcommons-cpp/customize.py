@@ -62,7 +62,7 @@ def preprocess(i):
     # add preprocessor flag like "#define CM_MODEL_RESNET50"
     env['+ CXXFLAGS'].append('-DCM_MODEL_' + env['CM_MODEL'].upper())
     # add preprocessor flag like "#define CM_MLPERF_BACKEND_ONNXRUNTIME"
-    env['+ CXXFLAGS'].append('-DCM_MLPERF_BACKEND_' + env['CM_MLPERF_BACKEND'].upper())
+    env['+ CXXFLAGS'].append('-DCM_MLPERF_BACKEND_' + env['CM_MLPERF_BACKEND'].upper().replace('-','_'))
     # add preprocessor flag like "#define CM_MLPERF_DEVICE_CPU"
     env['+ CXXFLAGS'].append('-DCM_MLPERF_DEVICE_' + env['CM_MLPERF_DEVICE'].upper())
 

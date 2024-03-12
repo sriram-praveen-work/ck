@@ -96,6 +96,38 @@ deps:
       - gpu
     tags: get,lib,onnxruntime,lang-cpp,_cuda
 
+  - enable_if_env:
+      CM_MLPERF_BACKEND:
+      - tvm-onnx
+      CM_MLPERF_DEVICE:
+      - cpu
+    tags: get,generic-python-lib,_onnx
+    names:
+      - tvm
+    tags: get,tvm
+    # names:
+    #   - tvm-model 
+    # tags: get,tvm-model,_onnx
+    #   update_tags_from_env_with_prefix:
+    #     _model.: 
+    #     - CM_MODEL
+
+  - enable_if_env:
+      CM_MLPERF_BACKEND:
+      - tvm-onnx
+      CM_MLPERF_DEVICE:
+      - gpu
+    tags: get,generic-python-lib,_onnx
+    names:
+      - tvm
+    tags: get,tvm,_cuda
+    # names:
+    #   - tvm-model 
+    # tags: get,tvm-model,_onnx
+    #   update_tags_from_env_with_prefix:
+    #     _model.: 
+    #     - CM_MODEL
+
 
   ########################################################################
   # Install ResNet50 model (ONNX) and ImageNet
@@ -196,6 +228,7 @@ variations:
     group: framework
     env:
       CM_MLPERF_BACKEND: tvm-onnx
+      CM_MLPERF_BACKEND_LIB_NAMESPEC: tvm-onnx
 
   # Reference MLPerf models
   resnet50:
@@ -223,8 +256,8 @@ variations:
     default_env:
       CM_MLPERF_LOADGEN_MAX_BATCHSIZE: 8
 
-  batch-size.#:
-    group: batch-size
+  batch_size.#:
+    group: batch_size
     env:
       CM_MLPERF_LOADGEN_MAX_BATCHSIZE: "#"
 
@@ -249,12 +282,12 @@ variations:
 
   multistream,resnet50:
     default_variations:
-      batch-size: batch-size.8
+      batch_size: batch_size.8
 
   offline,resnet50:
     default_variations:
-      batch-size: batch-size.32
+      batch_size: batch_size.32
 
   multistream,retinanet:
     default_variations:
-      batch-size: batch-size.1
+      batch_size: batch_size.1

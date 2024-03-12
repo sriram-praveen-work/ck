@@ -1,5 +1,5 @@
-#ifndef TVM_RUNTIME_BACKEND_H_
-#define TVM_RUNTIME_BACKEND_H_
+#ifndef TVM_BACKEND_H_
+#define TVM_BACKEND_H_
 
 #include <memory>
 #include <vector>
@@ -16,9 +16,9 @@
 #include "loadgen.h"
 #include "backend.h"
 
-class TVMRuntimeBackend : public Backend {
+class TVMBackend : public Backend {
 public:
-    TVMRuntimeBackend(
+    TVMBackend(
             std::shared_ptr<Model> &model, std::shared_ptr<Device> &device,
             size_t performance_sample_count, size_t batch_size,
             bool use_cuda)
@@ -227,4 +227,4 @@ private:
     DLDevice ctx_;
 };
 
-#endif // TVM_RUNTIME_BACKEND_H_
+#endif // TVM_BACKEND_H_
