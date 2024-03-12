@@ -11,6 +11,7 @@
 #include <tvm/runtime/vm/vm.h>
 #include <tvm/runtime/container/adt.h>
 #include <tvm/runtime/c_runtime_api.h>
+#include <tvm/runtime/ndarray.h>
 
 #include "loadgen.h"
 #include "backend.h"
@@ -116,51 +117,110 @@ public:
 
         // Assuming output is a Tuple of NDArrays representing multiple outputs
         tvm::runtime::ObjectRef out = run_func("main");
-        tvm::runtime::Array<tvm::runtime::NDArray> outputs = out;
+        //tvm::runtime::Array<tvm::runtime::NDArray> outputs = out;
+
+        tvm::runtime::NDArray outputs;
+        std::vector<tvm::runtime::NDArray> arrays; // Declare a vector to store NDArrays
+        if (out.as<tvm::runtime::ADTObj>()) 
+        {
+            auto adt = tvm::Downcast<tvm::runtime::ADT>(out);
+            size_t num_arrays = adt.size(); // Get the number of elements in the ADT
+            for (size_t i = 0; i < num_arrays; ++i) 
+            {
+                // Downcast each element to an NDArray and store it in the vector
+                arrays.push_back(tvm::Downcast<tvm::runtime::NDArray>(adt[i]));
+            }
+            
+        } 
+            else
+        {
+            outputs = tvm::Downcast<tvm::runtime::NDArray>(out);
+        }
+
+        // IMPLEMENTATION FOR SINGLE o/p TENSOR:
+        int ndim = outputs->ndim;
+        int tot_dim = 1;
+
+        for (int i = 0; i < ndim; i++)
+    {
+        tot_dim *= outputs->shape[i];
+    }
+        auto ssize = ndarray_utils::GetMemSize(outputs);
+    //  std::cout<<"size of classifier output: "<<ssize<<std::endl;
+        void* data = (void*)malloc(ssize * (outputs->dtype.bits * outputs->dtype.lanes + 7) / 8);
+        outputs.CopyToBytes(data, ssize);
+        //std::vector<float> inference_output((float *)data, (float *)data + tot_dim);
 
         // Process output and send responses
         std::vector<mlperf::QuerySampleResponse> responses(batch.size());
         std::vector<std::vector<uint8_t>> response_buffers(batch.size());
 
         // Determine the total number of elements in all output arrays
-        size_t total_output_elements = 0;
-        for (size_t j = 0; j < outputs.size(); ++j) {
-            tvm::runtime::NDArray output_array = outputs[j];
-            total_output_elements += output_array->shape.Size();
-        }
+        // size_t total_output_elements = 0;
+        // for (size_t j = 0; j < outputs.size(); ++j) {
+        //     tvm::runtime::NDArray output_array = outputs[j];
+        //     total_output_elements += output_array->shape.Size();
+        // }
 
-        // Iterate over each sample in the batch
-        for (size_t i = 0; i < batch.size(); ++i) {
-            size_t offset = 0;
 
-            // Iterate over each output array
-            for (size_t j = 0; j < outputs.size(); ++j) {
-                tvm::runtime::NDArray output_array = outputs[j];
-                const float* output_data = static_cast<float*>(output_array->data);
-                
-                // Assuming output array is flattened
-                size_t output_size = output_array->shape.Size();
-                
-                // Copy data from output array to response buffer
-                response_buffers[i].insert(
-                    response_buffers[i].end(),
-                    reinterpret_cast<const uint8_t*>(output_data + offset),
-                    reinterpret_cast<const uint8_t*>(output_data + offset + output_size * sizeof(float))
-                );
 
-                offset += output_size;
+        for (size_t i = 0; i < batch.size(); i++) {
+            // get output data and shapes
+            std::vector<void *> output_buffers(outputs.size());
+            std::vector<std::vector<size_t>> output_shapes(outputs.size());
+            for (size_t j = 0; j < outputs.size(); j++) {
+                // assume ith position in output is ith sample in batch
+                output_buffers[j] =
+                    static_cast<uint8_t *>(outputs[j].GetTensorMutableData<void>())
+                    + i * model->output_sizes[j];
+                size_t rank = outputs[j].GetTensorTypeAndShapeInfo().GetDimensionsCount();
+                std::vector<int64_t> output_shape(rank);
+                outputs[j].GetTensorTypeAndShapeInfo().GetDimensions(output_shape.data(), rank);
+                output_shapes[j].resize(rank);
+                for (size_t k = 0; k < rank; k++)
+                    output_shapes[j][k] = output_shape[k];
             }
+
+            model->PostProcess(
+                batch[i].index, output_buffers, output_shapes, response_buffers[i]);
 
             responses[i].id = batch[i].id;
             responses[i].data = reinterpret_cast<uintptr_t>(response_buffers[i].data());
             responses[i].size = response_buffers[i].size();
         }
 
+        // // Iterate over each sample in the batch
+        // for (size_t i = 0; i < batch.size(); ++i) {
+        //     size_t offset = 0;
+
+        //     // Iterate over each output array
+        //     for (size_t j = 0; j < outputs.size(); ++j) {
+        //         tvm::runtime::NDArray output_array = outputs[j];
+        //         const float* output_data = static_cast<float*>(output_array->data);
+                
+        //         // Assuming output array is flattened
+        //         size_t output_size = output_array->shape.Size();
+                
+        //         // Copy data from output array to response buffer
+        //         response_buffers[i].insert(
+        //             response_buffers[i].end(),
+        //             reinterpret_cast<const uint8_t*>(output_data + offset),
+        //             reinterpret_cast<const uint8_t*>(output_data + offset + output_size * sizeof(float))
+        //         );
+
+        //         offset += output_size;
+        //     }
+
+        //     responses[i].id = batch[i].id;
+        //     responses[i].data = reinterpret_cast<uintptr_t>(response_buffers[i].data());
+        //     responses[i].size = response_buffers[i].size();
+        // }
+
         // Send responses
         mlperf::QuerySamplesComplete(responses.data(), responses.size());
 
         
-    }
+    };
 
 private:
     std::vector<tvm::runtime::vm::VirtualMachinePtr> vm_ptrs;
