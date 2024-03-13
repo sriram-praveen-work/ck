@@ -17,6 +17,15 @@
 #include "loadgen.h"
 #include "backend.h"
 
+inline size_t GetMemSize(tvm::runtime::NDArray& narr) {
+   size_t size = 1;
+   for (tvm_index_t i = 0; i < narr->ndim; ++i) {
+      size *= static_cast<size_t>(narr->shape[i]);
+   }
+   size *= (narr->dtype.bits * narr->dtype.lanes + 7) / 8;
+   return size;
+}
+
 class TVMBackend : public Backend {
 public:
     TVMBackend(
@@ -27,7 +36,7 @@ public:
 
         // Load the TVM module
         std::filesystem::path p = model->model_path;
-        std::string modelPath = p.replace_extension().to_string();
+        std::string modelPath = p.replace_extension().string();
         std::string vmModelPath = modelPath + ".so";
         std::string vmConstsPath = modelPath + ".const";
         std::string vmExecCodePath = modelPath + ".ro";
@@ -49,8 +58,8 @@ public:
         auto vmExec = tvm::runtime::GetObjectPtr<tvm::runtime::vm::Executable>(const_cast<tvm::runtime::vm::Executable*>(tmp));
         // vmExec->LoadLateBoundConstantsFromFile(consts_path);
         // std::cout << "consts  loaded\n";
-        auto vmMod = tvm::runtime::make_object<tvm::runtime::vm::VirtualMachine>();
-        vmMod->LoadExecutable(vmExec);
+        // auto vmMod = tvm::runtime::make_object<tvm::runtime::vm::VirtualMachine>();
+        // vmMod->LoadExecutable(vmExec);
 
         
 
@@ -73,12 +82,12 @@ public:
             tvm::runtime::TVMArgsSetter setter(init_vals.data(), codes.data());
             setter(0, (int)ctx.device_type);
             setter(1, (int)ctx.device_id);
-            setter(2, (uint64_t)tvm::runtime::vm::AllocatorType::kPooled);
+            setter(2, (uint64_t)tvm::runtime::AllocatorType::kPooled);
 
             if (ctx.device_type != kDLCPU) {
                 setter(3, (int)kDLCPU);
                 setter(4, 0);
-                setter(5, (uint64_t)tvm::runtime::vm::AllocatorType::kPooled);
+                setter(5, (uint64_t)tvm::runtime::AllocatorType::kPooled);
             }
 
             tvm::runtime::TVMRetValue rv;
@@ -96,39 +105,40 @@ public:
             const std::vector<mlperf::QuerySample> &batch,
             std::vector<void *> &batch_data) override {
         
-        size_t memory_index = device->GetMemoryIndex(concurrency_index);
+        std::string ENTRY_FUNCTION = "main";
+
+        // size_t memory_index = device->GetMemoryIndex(concurrency_index);
         auto vmMod = vmMod_list[concurrency_index];
         DLDevice ctx = ctx_list[concurrency_index];
 
+        const size_t num_args = model->num_inputs + 1;
+        std::vector<TVMValue> values(num_args);
+        std::vector<int> type_codes(num_args);
+        tvm::runtime::TVMArgsSetter arg_setter(values.data(), type_codes.data());
+        arg_setter(0, ENTRY_FUNCTION);
         for (size_t i = 0; i < model->num_inputs; i++) {
             size_t size = batch.size() * GetSampleSize(batch.front().index, i);
             const std::vector<size_t> &shape = GetSampleShape(batch.front().index, i);
-
-            // Assuming data type is float32
-            DLDataType dtype{kDLFloat, 32, 1};
             std::vector<int64_t> input_shape;
             input_shape.push_back(batch.size());
             for (size_t dim : shape)
                 input_shape.push_back(dim);
-
-            tvm::runtime::NDArray x = tvm::runtime::NDArray::Empty(
-                tvm::runtime::ShapeTuple(input_shape),
-                dtype, ctx);
-
-            // Copy data from batch_data to x
-            for (size_t j = 0; j < batch.size(); j++) {
-                std::memcpy(static_cast<float*>(x->data) + j * shape.size(),
-                            static_cast<float*>(batch_data[i]) + j * shape.size(),
-                            shape.size() * sizeof(float));
-            }
-
-            // set the input
-            tvm::runtime::PackedFunc set_input = vmMod->GetFunction("set_input", nullptr);
-            set_input.CallPacked("main", x);
-
-            // Synchronize device
-            TVMSynchronize(ctx.device_type, ctx.device_id, nullptr);
+            auto get_input_index = vmMod->GetFunction("get_input_index", nullptr);
+            int inp_index = get_input_index(ENTRY_FUNCTION, model->input_names[i]);
+            auto dtype = tvm::runtime::String2DLDataType("float32");
+            tvm::runtime::NDArray inp_ndarray = tvm::runtime::NDArray::Empty(input_shape, dtype, ctx);
+            inp_ndarray.CopyFromBytes(batch_data[i], size);
+            arg_setter(inp_index + 1, inp_ndarray);
         }
+
+        tvm::runtime::PackedFunc set_input = vmMod->GetFunction("set_input", nullptr);
+        tvm::runtime::TVMRetValue rv;
+        set_input.CallPacked(tvm::runtime::TVMArgs(values.data(), type_codes.data(), num_args), &rv);
+
+        
+        // Synchronize device
+        TVMSynchronize(ctx.device_type, ctx.device_id, nullptr);
+        
 
         // Run inference
         tvm::runtime::PackedFunc run_func = vmMod->GetFunction("invoke", nullptr);
@@ -230,8 +240,8 @@ public:
     };
 
 private:
-    std::vector<tvm::runtime::vm::VirtualMachine> vmMod_list;
-    DLDevice ctx_list;
+    std::vector<tvm::runtime::ObjectPtr<tvm::runtime::vm::VirtualMachine>> vmMod_list;
+    std::vector<DLDevice> ctx_list;
 };
 
 #endif // TVM_BACKEND_H_
