@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <cstring>
+#include <filesystem>
 
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/packed_func.h>
@@ -25,19 +26,37 @@ public:
             : Backend(model, device, performance_sample_count, batch_size) {
 
         // Load the TVM module
-        tvm::runtime::Module lib = tvm::runtime::Module::LoadFromFile(model->model_path);
-        std::ifstream code(model->model_path + ".ro", std::ios::binary);
+        std::filesystem::path p = model->model_path;
+        std::string modelPath = p.replace_extension().to_string();
+        std::string vmModelPath = modelPath + ".so";
+        std::string vmConstsPath = modelPath + ".const";
+        std::string vmExecCodePath = modelPath + ".ro";
+        
+        tvm::runtime::Module vmLib = tvm::runtime::Module::LoadFromFile(vmModelPath);
+
+        std::ifstream code(vmExecCodePath, std::ios::binary);
+        std::cout<<vmExecCodePath<<std::endl;
         std::stringstream ss;
         ss << code.rdbuf();
-        tvm::runtime::Module exec_mod = tvm::runtime::vm::Executable::Load(ss.str(), lib);
-        if (exec_mod.operator->() == nullptr) {
-            std::cerr << "Failed to load TVM module" << std::endl;
-            return;
+
+        tvm::runtime::Module vmExecMod = tvm::runtime::vm::Executable::Load(ss.str(), vmLib);
+        if (vmExecMod.get() == nullptr)
+        {
+            std::cout << "Failed to load module" << std::endl;
+            //return -1;
         }
+        const tvm::runtime::vm::Executable* tmp = vmExecMod.as<tvm::runtime::vm::Executable>();  
+        auto vmExec = tvm::runtime::GetObjectPtr<tvm::runtime::vm::Executable>(const_cast<tvm::runtime::vm::Executable*>(tmp));
+        // vmExec->LoadLateBoundConstantsFromFile(consts_path);
+        // std::cout << "consts  loaded\n";
+        auto vmMod = tvm::runtime::make_object<tvm::runtime::vm::VirtualMachine>();
+        vmMod->LoadExecutable(vmExec);
+
+        
 
         for (size_t i = 0; i < device->NumConcurrency(); i++) {
-            auto vm = tvm::runtime::make_object<tvm::runtime::vm::VirtualMachine>();
-            vm->LoadExecutable(exec_mod);
+            auto vmMod = tvm::runtime::make_object<tvm::runtime::vm::VirtualMachine>();
+            vmMod->LoadExecutable(vmExec);
 
             // Initialize the VM for the specified device
             DLDevice ctx;
@@ -63,13 +82,13 @@ public:
             }
 
             tvm::runtime::TVMRetValue rv;
-            vm->GetFunction("init", nullptr).CallPacked(tvm::runtime::TVMArgs(init_vals.data(), codes.data(), arity), &rv);
+            vmMod->GetFunction("init", nullptr).CallPacked(tvm::runtime::TVMArgs(init_vals.data(), codes.data(), arity), &rv);
 
             // Store the VM and context
-            vm_ptrs.emplace_back(vm);
+            vmMod_list.emplace_back(vmMod);
+            ctx_list.emplace_back(ctx);
 
         }
-        ctx_ = ctx;
     }
 
     void RunInference(
@@ -78,8 +97,8 @@ public:
             std::vector<void *> &batch_data) override {
         
         size_t memory_index = device->GetMemoryIndex(concurrency_index);
-        auto vm = vm_ptrs[concurrency_index];
-        DLDevice ctx = ctx_;
+        auto vmMod = vmMod_list[concurrency_index];
+        DLDevice ctx = ctx_list[concurrency_index];
 
         for (size_t i = 0; i < model->num_inputs; i++) {
             size_t size = batch.size() * GetSampleSize(batch.front().index, i);
@@ -104,7 +123,7 @@ public:
             }
 
             // set the input
-            tvm::runtime::PackedFunc set_input = vm->GetFunction("set_input", nullptr);
+            tvm::runtime::PackedFunc set_input = vmMod->GetFunction("set_input", nullptr);
             set_input.CallPacked("main", x);
 
             // Synchronize device
@@ -112,7 +131,7 @@ public:
         }
 
         // Run inference
-        tvm::runtime::PackedFunc run_func = vm->GetFunction("invoke", nullptr);
+        tvm::runtime::PackedFunc run_func = vmMod->GetFunction("invoke", nullptr);
         // run_func("main");
 
         // Assuming output is a Tuple of NDArrays representing multiple outputs
@@ -223,8 +242,8 @@ public:
     };
 
 private:
-    std::vector<tvm::runtime::vm::VirtualMachinePtr> vm_ptrs;
-    DLDevice ctx_;
+    std::vector<tvm::runtime::vm::VirtualMachine> vmMod_list;
+    DLDevice ctx_list;
 };
 
 #endif // TVM_BACKEND_H_

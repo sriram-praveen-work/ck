@@ -33,10 +33,17 @@ def postprocess(i):
 
     ## Include
     include_path = os.path.join(tvm_home, 'include')
+    dlpack_include_path = os.path.join(tvm_home, '3rdparty/dlpack/include')
+    dmlc_include_path = os.path.join(tvm_home, '3rdparty/dmlc-core/include')
+
     if os.path.isdir(include_path):
         if os_info['platform'] != 'windows':
             env['+C_INCLUDE_PATH'].append(include_path)
             env['+CPLUS_INCLUDE_PATH'].append(include_path)
+            env['+C_INCLUDE_PATH'].append(dlpack_include_path)
+            env['+CPLUS_INCLUDE_PATH'].append(dlpack_include_path)
+            env['+C_INCLUDE_PATH'].append(dmlc_include_path)
+            env['+CPLUS_INCLUDE_PATH'].append(dmlc_include_path)
 
         env['CM_TVM_PATH_INCLUDE'] = include_path
 

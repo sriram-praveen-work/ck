@@ -228,7 +228,7 @@ variations:
     group: framework
     env:
       CM_MLPERF_BACKEND: tvm-onnx
-      CM_MLPERF_BACKEND_LIB_NAMESPEC: tvm-onnx
+      CM_MLPERF_BACKEND_LIB_NAMESPEC: tvm_runtime
 
   # Reference MLPerf models
   resnet50:
