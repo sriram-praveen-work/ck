@@ -138,7 +138,7 @@ public:
         tvm::runtime::ObjectRef out = run_func("main");
         //tvm::runtime::Array<tvm::runtime::NDArray> outputs = out;
 
-        tvm::runtime::NDArray outputs;
+        //tvm::runtime::NDArray outputs;
         std::vector<tvm::runtime::NDArray> arrays; // Declare a vector to store NDArrays
         if (out.as<tvm::runtime::ADTObj>()) 
         {
@@ -153,55 +153,43 @@ public:
         } 
             else
         {
-            outputs = tvm::Downcast<tvm::runtime::NDArray>(out);
-        }
-
-        // IMPLEMENTATION FOR SINGLE o/p TENSOR:
-        int ndim = outputs->ndim;
-        int tot_dim = 1;
-
-        for (int i = 0; i < ndim; i++)
-    {
-        tot_dim *= outputs->shape[i];
-    }
-        auto ssize = ndarray_utils::GetMemSize(outputs);
-    //  std::cout<<"size of classifier output: "<<ssize<<std::endl;
-        void* data = (void*)malloc(ssize * (outputs->dtype.bits * outputs->dtype.lanes + 7) / 8);
-        outputs.CopyToBytes(data, ssize);
-        //std::vector<float> inference_output((float *)data, (float *)data + tot_dim);
+            //outputs = tvm::Downcast<tvm::runtime::NDArray>(out);
+            arrays.push_back(tvm::Downcast<tvm::runtime::NDArray>(out));
+        }    
 
         // Process output and send responses
         std::vector<mlperf::QuerySampleResponse> responses(batch.size());
         std::vector<std::vector<uint8_t>> response_buffers(batch.size());
 
-        // Determine the total number of elements in all output arrays
-        // size_t total_output_elements = 0;
-        // for (size_t j = 0; j < outputs.size(); ++j) {
-        //     tvm::runtime::NDArray output_array = outputs[j];
-        //     total_output_elements += output_array->shape.Size();
-        // }
-
-
 
         for (size_t i = 0; i < batch.size(); i++) {
-            // get output data and shapes
-            std::vector<void *> output_buffers(outputs.size());
-            std::vector<std::vector<size_t>> output_shapes(outputs.size());
-            for (size_t j = 0; j < outputs.size(); j++) {
-                // assume ith position in output is ith sample in batch
-                output_buffers[j] =
-                    static_cast<uint8_t *>(outputs[j].GetTensorMutableData<void>())
-                    + i * model->output_sizes[j];
-                size_t rank = outputs[j].GetTensorTypeAndShapeInfo().GetDimensionsCount();
-                std::vector<int64_t> output_shape(rank);
-                outputs[j].GetTensorTypeAndShapeInfo().GetDimensions(output_shape.data(), rank);
-                output_shapes[j].resize(rank);
-                for (size_t k = 0; k < rank; k++)
-                    output_shapes[j][k] = output_shape[k];
+            // Iterate over the output arrays
+            std::vector<void *> output_buffers(arrays.size());
+            std::vector<std::vector<size_t>> output_shapes(arrays.size()); 
+            for (size_t j = 0; j < arrays.size(); j++) {
+                tvm::runtime::NDArray output_array = arrays[j];
+
+                // Calculate the total number of elements in the output array
+                int total_elements = 1;
+                for (int k = 0; k < output_array->ndim; k++) {
+                    total_elements *= output_array->shape[k];
+                }
+
+                // Allocate memory for output buffer and copy data from the output array
+                size_t output_size = total_elements * (output_array->dtype.bits * output_array->dtype.lanes + 7) / 8;
+                void* output_buffer = malloc(output_size);
+                output_array.CopyToBytes(output_buffer, output_size);
+
+                // Store output buffer and shape information
+                output_buffers[j] = output_buffer;
             }
 
-            model->PostProcess(
-                batch[i].index, output_buffers, output_shapes, response_buffers[i]);
+            // Post-process outputs and prepare response
+            model->PostProcess(batch[i].index, output_buffers, output_shapes, response_buffers[i]);
+
+            for (size_t j = 0; j < arrays.size(); j++) {
+                free(output_buffers[j]);
+                }
 
             responses[i].id = batch[i].id;
             responses[i].data = reinterpret_cast<uintptr_t>(response_buffers[i].data());
