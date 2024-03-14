@@ -56,7 +56,7 @@ public:
         }
         const tvm::runtime::vm::Executable* tmp = vmExecMod.as<tvm::runtime::vm::Executable>();  
         auto vmExec = tvm::runtime::GetObjectPtr<tvm::runtime::vm::Executable>(const_cast<tvm::runtime::vm::Executable*>(tmp));
-        // vmExec->LoadLateBoundConstantsFromFile(consts_path);
+        vmExec->LoadLateBoundConstantsFromFile(vmConstsPath);
         // std::cout << "consts  loaded\n";
         // auto vmMod = tvm::runtime::make_object<tvm::runtime::vm::VirtualMachine>();
         // vmMod->LoadExecutable(vmExec);
@@ -124,16 +124,26 @@ public:
             for (size_t dim : shape)
                 input_shape.push_back(dim);
             auto get_input_index = vmMod->GetFunction("get_input_index", nullptr);
-            int inp_index = get_input_index(ENTRY_FUNCTION, model->input_names[i]);
-            auto dtype = tvm::runtime::String2DLDataType("float32");
-            tvm::runtime::NDArray inp_ndarray = tvm::runtime::NDArray::Empty(input_shape, dtype, ctx);
-            inp_ndarray.CopyFromBytes(batch_data[i], size);
-            arg_setter(inp_index + 1, inp_ndarray);
+            int inp_index = get_input_index(model->input_names[i], ENTRY_FUNCTION);
+            // std::cout << "Input Index: "<<inp_index << std::endl;
+            // auto dtype = tvm::runtime::String2DLDataType("float32");
+            // tvm::runtime::NDArray inp_ndarray = tvm::runtime::NDArray::Empty(input_shape, dtype, ctx);
+            // inp_ndarray.CopyFromBytes(batch_data[i], size);
+            DLTensor *inp_array;
+            int dtype_code = kDLFloat;
+            int dtype_bits = 32;
+            int dtype_lanes = 1;
+            int64_t * in_shape = input_shape.data();
+            int in_ndim = input_shape.size();
+            int nbytes_float32 = 4;
+            TVMArrayAlloc(in_shape, in_ndim, dtype_code, dtype_bits, dtype_lanes, (int)ctx.device_type, ctx.device_id, &inp_array);
+            TVMArrayCopyFromBytes(inp_array,batch_data[i], size);
+            arg_setter(inp_index + 1, inp_array);
         }
 
         tvm::runtime::PackedFunc set_input = vmMod->GetFunction("set_input", nullptr);
         tvm::runtime::TVMRetValue rv;
-        set_input.CallPacked(tvm::runtime::TVMArgs(values.data(), type_codes.data(), num_args), &rv);
+        set_input.CallPacked(tvm::runtime::TVMArgs(values.data(), type_codes.data(), int(num_args)), &rv);
 
         
         // Synchronize device
@@ -145,7 +155,7 @@ public:
         // run_func("main");
 
         // Assuming output is a Tuple of NDArrays representing multiple outputs
-        tvm::runtime::ObjectRef out = run_func("main");
+        tvm::runtime::ObjectRef out = run_func(ENTRY_FUNCTION);
         //tvm::runtime::Array<tvm::runtime::NDArray> outputs = out;
 
         //tvm::runtime::NDArray outputs;
@@ -161,7 +171,7 @@ public:
             }
             
         } 
-            else
+        else
         {
             //outputs = tvm::Downcast<tvm::runtime::NDArray>(out);
             arrays.push_back(tvm::Downcast<tvm::runtime::NDArray>(out));
@@ -170,6 +180,17 @@ public:
         // Process output and send responses
         std::vector<mlperf::QuerySampleResponse> responses(batch.size());
         std::vector<std::vector<uint8_t>> response_buffers(batch.size());
+        // std::cout << "Output Tensors Count: "<<arrays.size() << std::endl;
+
+        arrays.pop_back();
+
+        // for (size_t j = 0; j < arrays.size(); j++) {
+        //     for (int i = 0; i < arrays[j]->ndim; i++) {
+        //         std::cout<<arrays[j]->shape[i]<<", ";
+        //     }
+        //     std::cout<<std::endl;
+        // }
+        // std::cout<<arrays[0]<<std::endl;
 
 
         for (size_t i = 0; i < batch.size(); i++) {
@@ -191,6 +212,8 @@ public:
                 size_t output_size = total_elements * (output_array->dtype.bits * output_array->dtype.lanes + 7) / 8;
                 void* output_buffer = malloc(output_size);
                 output_array.CopyToBytes(output_buffer, output_size);
+                //std::vector<float> inference_output((float *)data, (float *)data + tot_dim);
+                std::cout<<"Conf: "<<((float *)output_buffer)<<std::endl;
 
                 // Store output buffer and shape information
                 output_buffers[j] = output_buffer;

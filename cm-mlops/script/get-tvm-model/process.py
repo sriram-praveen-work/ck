@@ -8,8 +8,8 @@ if os.environ.get("CM_TVM_FRONTEND_FRAMEWORK", None) == "pytorch":
     
 import tvm
 from tvm import relay, meta_schedule
-from tvm.driver.tvmc.frontends import load_model
 import tvm.tir.tensor_intrin
+from tvm.driver.tvmc.frontends import load_model
 
 def get_shape_dict_from_onnx(
     shape: List[int],
@@ -92,7 +92,7 @@ def tune_model(
     work_dir = os.path.join(os.getcwd(), "metaschedule_workdir")
     if not os.path.exists(work_dir):
         os.mkdir(work_dir)
-    print("Extracting tasks...")
+    # print("Extracting tasks...")
     # extracted_tasks = meta_schedule.relay_integration.extract_tasks(
     #     mod, target, params
     # )
@@ -118,7 +118,7 @@ def tune_model(
     #         evaluator_config=evaluator_config
     #     ),
     # )
-
+        
     use_tensorcores = True
     # Metascheduler (CUDA Tensorcores)
     if use_tensorcores == True:
@@ -138,8 +138,8 @@ def tune_model(
             )
         )
     else:
-        print("Using regular space")
-        database = meta_schedule.relay_integration.tune_relay(
+         print("Using regular space")
+         database = meta_schedule.relay_integration.tune_relay(
             mod=mod,
             target=target,
             work_dir=work_dir,
@@ -201,16 +201,14 @@ def compile_model(
     return lib
 
 def serialize_vm(
-    vm_exec: tvm.runtime.vm.Executable
+    vm_exec: tvm.runtime.vm.Executable,
+    model_name: str
 ) -> tvm.runtime.Module:
     path_consts = os.path.join(
-        tempfile.mkdtemp(
-            dir=os.getcwd(), 
-            suffix="-tvm-tmp"
-        ), 
-        "consts"
+        os.getcwd(), 
+        model_name+".const"
     )
-    code_path = os.path.join(os.getcwd(), "vm_exec_code.ro")
+    code_path = os.path.join(os.getcwd(), model_name+".ro")
     vm_exec.move_late_bound_consts(path_consts, byte_limit=256)
     code, lib = vm_exec.save()
     with open(code_path, "wb") as file:
@@ -219,7 +217,8 @@ def serialize_vm(
 
 def main() -> None:
     model_path = os.environ.get('CM_ML_MODEL_FILE_WITH_PATH', None)
-    compiled_model = os.path.join(os.getcwd(), 'model-tvm.so')
+    model_name = os.environ.get('CM_ML_MODEL', 'model-tvm').strip().lower()
+    compiled_model = os.path.join(os.getcwd(), model_name +'.so')
     print('TVM model: ' + model_path)
     if model_path.endswith('.so') or model_path.endswith('.dylib'):
         compiled_model = model_path
@@ -271,9 +270,11 @@ def main() -> None:
         )
         if use_vm:
             lib = serialize_vm(
-                vm_exec=lib
+                vm_exec=lib,
+                model_name=model_name
             )
-            
+        print("TVM Target in Model Export: ", tvm_target)
+        print("TVM Executor: ", "virtual_machine" if use_vm else "graph_executor")
         with open(os.path.join(os.getcwd(), "tvm_executor"), "w") as file:
             file.write("virtual_machine" if use_vm else "graph_executor")
         lib.export_library(compiled_model)
