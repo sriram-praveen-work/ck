@@ -178,12 +178,14 @@ public:
             std::vector<std::vector<size_t>> output_shapes(arrays.size()); 
             for (size_t j = 0; j < arrays.size(); j++) {
                 tvm::runtime::NDArray output_array = arrays[j];
-
+                std::vector<size_t> output_shape(output_array->ndim);
                 // Calculate the total number of elements in the output array
                 int total_elements = 1;
                 for (int k = 0; k < output_array->ndim; k++) {
                     total_elements *= output_array->shape[k];
+                    output_shape[k] = output_array->shape[k];
                 }
+                output_shapes[j] = output_shape;
 
                 // Allocate memory for output buffer and copy data from the output array
                 size_t output_size = total_elements * (output_array->dtype.bits * output_array->dtype.lanes + 7) / 8;
@@ -192,6 +194,7 @@ public:
 
                 // Store output buffer and shape information
                 output_buffers[j] = output_buffer;
+                
             }
 
             // Post-process outputs and prepare response
