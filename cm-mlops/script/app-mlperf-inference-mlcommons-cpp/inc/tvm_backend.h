@@ -116,6 +116,7 @@ public:
         std::vector<int> type_codes(num_args);
         tvm::runtime::TVMArgsSetter arg_setter(values.data(), type_codes.data());
         arg_setter(0, ENTRY_FUNCTION);
+        std::vector<DLTensor*> input_tensors;
         for (size_t i = 0; i < model->num_inputs; i++) {
             size_t size = batch.size() * GetSampleSize(batch.front().index, i);
             const std::vector<size_t> &shape = GetSampleShape(batch.front().index, i);
@@ -139,6 +140,7 @@ public:
             TVMArrayAlloc(in_shape, in_ndim, dtype_code, dtype_bits, dtype_lanes, (int)ctx.device_type, ctx.device_id, &inp_array);
             TVMArrayCopyFromBytes(inp_array,batch_data[i], size);
             arg_setter(inp_index + 1, inp_array);
+            input_tensors.emplace_back(inp_array);
         }
 
         tvm::runtime::PackedFunc set_input = vmMod->GetFunction("set_input", nullptr);
@@ -157,6 +159,9 @@ public:
         // Assuming output is a Tuple of NDArrays representing multiple outputs
         tvm::runtime::ObjectRef out = run_func(ENTRY_FUNCTION);
         //tvm::runtime::Array<tvm::runtime::NDArray> outputs = out;
+        for (size_t i = 0; i < model->num_inputs; i++) {
+            TVMArrayFree(input_tensors[i]);
+        }
 
         //tvm::runtime::NDArray outputs;
         std::vector<tvm::runtime::NDArray> arrays; // Declare a vector to store NDArrays
@@ -190,7 +195,7 @@ public:
         //     }
         //     std::cout<<std::endl;
         // }
-        // std::cout<<arrays[0]<<std::endl;
+        // std::cout<<std::endl;
 
 
         for (size_t i = 0; i < batch.size(); i++) {
@@ -209,11 +214,11 @@ public:
                 output_shapes[j] = output_shape;
 
                 // Allocate memory for output buffer and copy data from the output array
-                size_t output_size = total_elements * (output_array->dtype.bits * output_array->dtype.lanes + 7) / 8;
+                auto output_size = GetMemSize(output_array);
+                // size_t output_size = total_elements * (output_array->dtype.bits * output_array->dtype.lanes + 7) / 8;
+                // std::cout<<"Total Elem: "<<total_elements<<"\tOutput Size: "<<output_size<<std::endl;
                 void* output_buffer = malloc(output_size);
-                output_array.CopyToBytes(output_buffer, output_size);
-                //std::vector<float> inference_output((float *)data, (float *)data + tot_dim);
-                std::cout<<"Conf: "<<((float *)output_buffer)<<std::endl;
+                output_array.CopyToBytes(static_cast<uint8_t *>(output_buffer) + i * model->output_sizes[j], output_size);
 
                 // Store output buffer and shape information
                 output_buffers[j] = output_buffer;
@@ -231,33 +236,6 @@ public:
             responses[i].data = reinterpret_cast<uintptr_t>(response_buffers[i].data());
             responses[i].size = response_buffers[i].size();
         }
-
-        // // Iterate over each sample in the batch
-        // for (size_t i = 0; i < batch.size(); ++i) {
-        //     size_t offset = 0;
-
-        //     // Iterate over each output array
-        //     for (size_t j = 0; j < outputs.size(); ++j) {
-        //         tvm::runtime::NDArray output_array = outputs[j];
-        //         const float* output_data = static_cast<float*>(output_array->data);
-                
-        //         // Assuming output array is flattened
-        //         size_t output_size = output_array->shape.Size();
-                
-        //         // Copy data from output array to response buffer
-        //         response_buffers[i].insert(
-        //             response_buffers[i].end(),
-        //             reinterpret_cast<const uint8_t*>(output_data + offset),
-        //             reinterpret_cast<const uint8_t*>(output_data + offset + output_size * sizeof(float))
-        //         );
-
-        //         offset += output_size;
-        //     }
-
-        //     responses[i].id = batch[i].id;
-        //     responses[i].data = reinterpret_cast<uintptr_t>(response_buffers[i].data());
-        //     responses[i].size = response_buffers[i].size();
-        // }
 
         // Send responses
         mlperf::QuerySamplesComplete(responses.data(), responses.size());

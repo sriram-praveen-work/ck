@@ -144,6 +144,16 @@ deps:
       - resnet50
     tags: get,ml-model,raw,resnet50,_onnx
 
+  # - enable_if_env:
+  #     CM_MLPERF_BACKEND:
+  #     - tvm-onnx
+  #     CM_MODEL:
+  #     - resnet50
+  #   - tags: get,tvm-model,_onnx
+  #     update_tags_from_env_with_prefix:
+  #       _model.: 
+  #       - CM_MODEL
+
 
   ########################################################################
   # Install RetinaNet model (ONNX) and OpenImages
@@ -229,6 +239,13 @@ variations:
     env:
       CM_MLPERF_BACKEND: tvm-onnx
       CM_MLPERF_BACKEND_LIB_NAMESPEC: tvm_runtime
+    deps:
+    - tags: get,tvm-model,_onnx #,_tune-model #,_graph_executor
+      names:
+      - tvm-model
+      update_tags_from_env_with_prefix:
+        _model.: 
+        - CM_MODEL
 
   # Reference MLPerf models
   resnet50:
