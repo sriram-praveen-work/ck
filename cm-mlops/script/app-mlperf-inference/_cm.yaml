@@ -1011,9 +1011,9 @@ variations:
     group: batch_size
     env:
       CM_MLPERF_LOADGEN_MAX_BATCHSIZE: '#'
-    add_deps_recursive:
-      mlperf-inference-implementation:
-        tags: _batch_size.#
+    # add_deps_recursive:
+    #   mlperf-inference-implementation:
+    #     tags: _batch_size.#
 
   # Reproducibility (past submissions)
   r2.1_default:
