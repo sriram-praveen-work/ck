@@ -121,12 +121,19 @@ public:
             size_t size = batch.size() * GetSampleSize(batch.front().index, i);
             const std::vector<size_t> &shape = GetSampleShape(batch.front().index, i);
             std::vector<int64_t> input_shape;
-            input_shape.push_back(batch.size());
+            input_shape.push_back(Backend::batch_size);
             for (size_t dim : shape)
                 input_shape.push_back(dim);
             auto get_input_index = vmMod->GetFunction("get_input_index", nullptr);
             int inp_index = get_input_index(model->input_names[i], ENTRY_FUNCTION);
             // std::cout << "Input Index: "<<inp_index << std::endl;
+            // if(batch.size()!=Backend::batch_size){
+            // std::cout << "Input Shape: "<< std::endl;
+            // for (auto i:input_shape){
+            //     std::cout << i <<" ";
+            // }
+            // std::cout<<std::endl;
+            // }
             // auto dtype = tvm::runtime::String2DLDataType("float32");
             // tvm::runtime::NDArray inp_ndarray = tvm::runtime::NDArray::Empty(input_shape, dtype, ctx);
             // inp_ndarray.CopyFromBytes(batch_data[i], size);
@@ -138,7 +145,7 @@ public:
             int in_ndim = input_shape.size();
             int nbytes_float32 = 4;
             TVMArrayAlloc(in_shape, in_ndim, dtype_code, dtype_bits, dtype_lanes, (int)ctx.device_type, ctx.device_id, &inp_array);
-            TVMArrayCopyFromBytes(inp_array,batch_data[i], size);
+            TVMArrayCopyFromBytes(inp_array, batch_data[i], size);
             arg_setter(inp_index + 1, inp_array);
             input_tensors.emplace_back(inp_array);
         }
@@ -149,8 +156,7 @@ public:
 
         
         // Synchronize device
-        TVMSynchronize(ctx.device_type, ctx.device_id, nullptr);
-        
+        // TVMSynchronize(ctx.device_type, ctx.device_id, nullptr);
 
         // Run inference
         tvm::runtime::PackedFunc run_func = vmMod->GetFunction("invoke", nullptr);
@@ -202,6 +208,7 @@ public:
             // Iterate over the output arrays
             std::vector<void *> output_buffers(arrays.size());
             std::vector<std::vector<size_t>> output_shapes(arrays.size()); 
+            void* output_buffer;
             for (size_t j = 0; j < arrays.size(); j++) {
                 tvm::runtime::NDArray output_array = arrays[j];
                 std::vector<size_t> output_shape(output_array->ndim);
@@ -216,25 +223,26 @@ public:
                 // Allocate memory for output buffer and copy data from the output array
                 auto output_size = GetMemSize(output_array);
                 // size_t output_size = total_elements * (output_array->dtype.bits * output_array->dtype.lanes + 7) / 8;
-                // std::cout<<"Total Elem: "<<total_elements<<"\tOutput Size: "<<output_size<<std::endl;
-                void* output_buffer = malloc(output_size);
-                output_array.CopyToBytes(static_cast<uint8_t *>(output_buffer) + i * model->output_sizes[j], output_size);
+                // std::cout<<"Total Elem: "<<total_elements<<"\tOutput Size: "<<output_size<<"\tModel Output Size: "<<model->output_sizes[j]<<std::endl;
+                output_buffer = malloc(output_size);
+                output_array.CopyToBytes(output_buffer, output_size);
 
                 // Store output buffer and shape information
-                output_buffers[j] = output_buffer;
-                
+                output_buffers[j] = static_cast<uint8_t *>(output_buffer) + i * model->output_sizes[j];
             }
 
             // Post-process outputs and prepare response
             model->PostProcess(batch[i].index, output_buffers, output_shapes, response_buffers[i]);
 
-            for (size_t j = 0; j < arrays.size(); j++) {
-                free(output_buffers[j]);
-                }
+            // for (size_t j = 0; j < arrays.size(); j++) {
+            //     free(output_buffers[j]);
+            //     }
 
             responses[i].id = batch[i].id;
             responses[i].data = reinterpret_cast<uintptr_t>(response_buffers[i].data());
             responses[i].size = response_buffers[i].size();
+            // std::cout<<"Batch Done: "<<i<<std::endl;
+            free(output_buffer);
         }
 
         // Send responses
